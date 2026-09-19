@@ -633,6 +633,16 @@ export async function parseTranscript(transcriptPath: string): Promise<Transcrip
             latestUltracodeActive = false;
           }
         }
+        // Track the latest user-message timestamp regardless of content shape
+        // (string for slash commands, array for prompts/tool_results). The
+        // "current question" tier uses this as its boundary: a skill counts as
+        // recent only if it was triggered at or after the last user message.
+        if (entry.type === 'user' && entry.timestamp) {
+          const userAt = new Date(entry.timestamp);
+          if (!Number.isNaN(userAt.getTime())) {
+            skillTurn.pending = userAt.getTime();
+          }
+        }
         // The `/effort` command-output signal. Anchored at the start of a *user*
         // record's string content, so prose quoting the phrase can't flip state.
         // Brittle by necessity — couples to Claude Code's /effort wording; if that
@@ -826,9 +836,13 @@ export async function parseTranscript(transcriptPath: string): Promise<Transcrip
   result.tools = Array.from(toolMap.values()).slice(-20);
   result.skills = Array.from(skillMap.entries()).map(([name, triggeredAt]) => ({
     name,
-    recent: skillTurn.last !== undefined
+    // "current question" = skills triggered at or after the last user message.
+    // A later prompt that triggers no skill leaves pending at its own time, so
+    // earlier skills (triggered < pending) drop off the "本次" tier — they no
+    // longer incorrectly stay flagged as recent.
+    recent: skillTurn.pending !== undefined
       && !Number.isNaN(triggeredAt.getTime())
-      && triggeredAt.getTime() >= skillTurn.last,
+      && triggeredAt.getTime() >= skillTurn.pending,
   }));
   result.mcpServers = Array.from(mcpServerSet.values());
   result.mcpErrors = Array.from(mcpErrorSet.values());
