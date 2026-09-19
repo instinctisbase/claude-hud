@@ -1171,7 +1171,7 @@ test('label color overrides apply across shared secondary text surfaces', () => 
   ctx.transcript.tools = [
     { id: 'tool-1', name: 'Read', target: 'src/index.ts', status: 'running', startTime: new Date(0) },
   ];
-  ctx.transcript.skills = [{ name: 'frontend-design', recent: false }];
+  ctx.transcript.skills = [{ name: 'frontend-design', recent: false, count: 1 }];
   ctx.transcript.mcpServers = ['linear'];
   ctx.transcript.agents = [
     { id: 'agent-1', type: 'planner', model: 'haiku', description: 'Inspecting', status: 'running', startTime: new Date(0) },
@@ -2300,7 +2300,7 @@ test('renderSkillsLine and renderMcpLine show counts and names when enabled', ()
   const ctx = baseContext();
   ctx.config.display.showSkills = true;
   ctx.config.display.showMcp = true;
-  ctx.transcript.skills = [{ name: 'frontend-design', recent: false }];
+  ctx.transcript.skills = [{ name: 'frontend-design', recent: false, count: 1 }];
   ctx.transcript.mcpServers = ['linear', 'slack'];
 
   const skillsLine = stripAnsi(renderSkillsLine(ctx) ?? '');
@@ -2314,7 +2314,7 @@ test('renderSkillsLine and renderMcpLine sanitize direct transcript names before
   const ctx = baseContext();
   ctx.config.display.showSkills = true;
   ctx.config.display.showMcp = true;
-  ctx.transcript.skills = [{ name: '[31mfrontend-design[0m\u202E', recent: false }, { name: '', recent: false }];
+  ctx.transcript.skills = [{ name: '[31mfrontend-design[0m\u202E', recent: false, count: 1 }, { name: '', recent: false, count: 1 }];
   ctx.transcript.mcpServers = [`linear-${'x'.repeat(100)}`];
 
   const skillsLine = stripAnsi(renderSkillsLine(ctx) ?? '');
@@ -2358,7 +2358,7 @@ test('skills and MCP activity lines stay hidden by default', () => {
     lineLayout: 'expanded',
     elementOrder: ['project', 'skills', 'mcp'],
   });
-  ctx.transcript.skills = [{ name: 'frontend-design', recent: false }];
+  ctx.transcript.skills = [{ name: 'frontend-design', recent: false, count: 1 }];
   ctx.transcript.mcpServers = ['linear', 'slack'];
 
   const output = captureRenderLines(ctx).join('\n');
@@ -3416,7 +3416,7 @@ test('render expanded layout honors custom elementOrder including activity place
   ctx.transcript.tools = [
     { id: 'tool-1', name: 'Read', status: 'completed', startTime: new Date(0), endTime: new Date(0), duration: 0 },
   ];
-  ctx.transcript.skills = [{ name: 'frontend-design', recent: false }];
+  ctx.transcript.skills = [{ name: 'frontend-design', recent: false, count: 1 }];
   ctx.transcript.mcpServers = ['linear'];
   ctx.transcript.agents = [
     { id: 'agent-1', type: 'planner', status: 'running', startTime: new Date(0) },
@@ -3631,7 +3631,7 @@ test('render compact layout keeps activity lines even when elementOrder omits th
   ctx.transcript.tools = [
     { id: 'tool-1', name: 'Read', status: 'completed', startTime: new Date(0), endTime: new Date(0), duration: 0 },
   ];
-  ctx.transcript.skills = [{ name: 'frontend-design', recent: false }];
+  ctx.transcript.skills = [{ name: 'frontend-design', recent: false, count: 1 }];
   ctx.transcript.mcpServers = ['linear'];
   ctx.transcript.todos = [
     { content: 'todo-marker', status: 'in_progress' },

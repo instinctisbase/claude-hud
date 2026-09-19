@@ -153,6 +153,8 @@ export interface SkillEntry {
   name: string;
   /** True if this skill was triggered in the last turn that invoked any skill. */
   recent: boolean;
+  /** How many times this skill was invoked during the session. */
+  count: number;
 }
 
 export interface TranscriptData {

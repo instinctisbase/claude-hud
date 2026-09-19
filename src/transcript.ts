@@ -342,7 +342,12 @@ function normalizeSkillList(value: unknown): SkillEntry[] {
     const recent = typeof item === 'object' && item !== null
       ? Boolean((item as { recent?: unknown }).recent)
       : false;
-    entries.push({ name, recent });
+    const count = typeof item === 'object' && item !== null
+      && typeof (item as { count?: unknown }).count === 'number'
+      && (item as { count: number }).count > 0
+      ? (item as { count: number }).count
+      : 1;
+    entries.push({ name, recent, count });
   }
 
   return entries;
@@ -549,8 +554,8 @@ export async function parseTranscript(transcriptPath: string): Promise<Transcrip
   }
 
   const toolMap = new Map<string, ToolEntry>();
-  /** skill name -> most recent trigger time (for recent-flag computation). */
-  const skillMap = new Map<string, Date>();
+  /** skill name -> { last trigger time, invocation count } (for recent + count). */
+  const skillMap = new Map<string, { lastTime: Date; count: number }>();
   /** Mutable turn-tracking state shared with processEntry: `pending` is the
    *  latest user-message timestamp; `last` is promoted from `pending` only
    *  when a turn triggers a skill, so "current question" = last skill turn. */
@@ -674,7 +679,8 @@ export async function parseTranscript(transcriptPath: string): Promise<Transcrip
               if (slashHasTime && slashEntryAt) {
                 // This turn triggered a skill: promote pending -> last.
                 skillTurn.last = slashEntryAt.getTime();
-                skillMap.set(skillName, slashEntryAt);
+                const prev = skillMap.get(skillName);
+                skillMap.set(skillName, { lastTime: slashEntryAt, count: (prev?.count ?? 0) + 1 });
               }
             }
           }
@@ -834,15 +840,16 @@ export async function parseTranscript(transcriptPath: string): Promise<Transcrip
     }
   }
   result.tools = Array.from(toolMap.values()).slice(-20);
-  result.skills = Array.from(skillMap.entries()).map(([name, triggeredAt]) => ({
+  result.skills = Array.from(skillMap.entries()).map(([name, { lastTime, count }]) => ({
     name,
+    count,
     // "current question" = skills triggered at or after the last user message.
     // A later prompt that triggers no skill leaves pending at its own time, so
     // earlier skills (triggered < pending) drop off the "本次" tier — they no
     // longer incorrectly stay flagged as recent.
     recent: skillTurn.pending !== undefined
-      && !Number.isNaN(triggeredAt.getTime())
-      && triggeredAt.getTime() >= skillTurn.pending,
+      && !Number.isNaN(lastTime.getTime())
+      && lastTime.getTime() >= skillTurn.pending,
   }));
   result.mcpServers = Array.from(mcpServerSet.values());
   result.mcpErrors = Array.from(mcpErrorSet.values());
@@ -882,7 +889,7 @@ export function _setCreateReadStreamForTests(impl: typeof fs.createReadStream | 
 function processEntry(
   entry: TranscriptLine,
   toolMap: Map<string, ToolEntry>,
-  skillMap: Map<string, Date>,
+  skillMap: Map<string, { lastTime: Date; count: number }>,
   skillTurn: { pending: number | undefined; last: number | undefined },
   mcpServerSet: Set<string>,
   mcpErrorSet: Set<string>,
@@ -916,7 +923,8 @@ function processEntry(
         if (skillTurn.pending !== undefined) {
           skillTurn.last = skillTurn.pending;
         }
-        skillMap.set(skillName, timestamp);
+        const prev = skillMap.get(skillName);
+        skillMap.set(skillName, { lastTime: timestamp, count: (prev?.count ?? 0) + 1 });
       }
 
       const mcpServerName = extractMcpServerName(block.name);

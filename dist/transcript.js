@@ -186,7 +186,12 @@ function normalizeSkillList(value) {
         const recent = typeof item === 'object' && item !== null
             ? Boolean(item.recent)
             : false;
-        entries.push({ name, recent });
+        const count = typeof item === 'object' && item !== null
+            && typeof item.count === 'number'
+            && item.count > 0
+            ? item.count
+            : 1;
+        entries.push({ name, recent, count });
     }
     return entries;
 }
@@ -377,7 +382,7 @@ export async function parseTranscript(transcriptPath) {
         return cached;
     }
     const toolMap = new Map();
-    /** skill name -> most recent trigger time (for recent-flag computation). */
+    /** skill name -> { last trigger time, invocation count } (for recent + count). */
     const skillMap = new Map();
     /** Mutable turn-tracking state shared with processEntry: `pending` is the
      *  latest user-message timestamp; `last` is promoted from `pending` only
@@ -494,7 +499,8 @@ export async function parseTranscript(transcriptPath) {
                             if (slashHasTime && slashEntryAt) {
                                 // This turn triggered a skill: promote pending -> last.
                                 skillTurn.last = slashEntryAt.getTime();
-                                skillMap.set(skillName, slashEntryAt);
+                                const prev = skillMap.get(skillName);
+                                skillMap.set(skillName, { lastTime: slashEntryAt, count: (prev?.count ?? 0) + 1 });
                             }
                         }
                     }
@@ -649,15 +655,16 @@ export async function parseTranscript(transcriptPath) {
         }
     }
     result.tools = Array.from(toolMap.values()).slice(-20);
-    result.skills = Array.from(skillMap.entries()).map(([name, triggeredAt]) => ({
+    result.skills = Array.from(skillMap.entries()).map(([name, { lastTime, count }]) => ({
         name,
+        count,
         // "current question" = skills triggered at or after the last user message.
         // A later prompt that triggers no skill leaves pending at its own time, so
         // earlier skills (triggered < pending) drop off the "本次" tier — they no
         // longer incorrectly stay flagged as recent.
         recent: skillTurn.pending !== undefined
-            && !Number.isNaN(triggeredAt.getTime())
-            && triggeredAt.getTime() >= skillTurn.pending,
+            && !Number.isNaN(lastTime.getTime())
+            && lastTime.getTime() >= skillTurn.pending,
     }));
     result.mcpServers = Array.from(mcpServerSet.values());
     result.mcpErrors = Array.from(mcpErrorSet.values());
@@ -710,7 +717,8 @@ function processEntry(entry, toolMap, skillMap, skillTurn, mcpServerSet, mcpErro
                 if (skillTurn.pending !== undefined) {
                     skillTurn.last = skillTurn.pending;
                 }
-                skillMap.set(skillName, timestamp);
+                const prev = skillMap.get(skillName);
+                skillMap.set(skillName, { lastTime: timestamp, count: (prev?.count ?? 0) + 1 });
             }
             const mcpServerName = extractMcpServerName(block.name);
             if (mcpServerName) {
