@@ -2310,17 +2310,17 @@ test('renderSkillsLine and renderMcpLine show counts and names when enabled', ()
   assert.equal(mcpLine, '✓ MCPs (2): linear, slack');
 });
 
-test.skip('renderSkillsLine and renderMcpLine sanitize direct transcript names before display', () => {
+test('renderSkillsLine and renderMcpLine sanitize direct transcript names before display', () => {
   const ctx = baseContext();
   ctx.config.display.showSkills = true;
   ctx.config.display.showMcp = true;
-  ctx.transcript.skills = [{ name: '[31mfrontend-design[0m202E', recent: false }, { name: '', recent: false }];
+  ctx.transcript.skills = [{ name: '[31mfrontend-design[0m\u202E', recent: false }, { name: '', recent: false }];
   ctx.transcript.mcpServers = [`linear-${'x'.repeat(100)}`];
 
   const skillsLine = stripAnsi(renderSkillsLine(ctx) ?? '');
   const mcpLine = stripAnsi(renderMcpLine(ctx) ?? '');
 
-  assert.equal(skillsLine, '✓ Skills (1): frontend-design');
+  assert.equal(skillsLine, '会话 ✓ Skills (1): frontend-design');
   assert.ok(!skillsLine.includes('\u202E'), 'bidi control must not render');
   assert.equal(mcpLine, `✓ MCPs (1): ${`linear-${'x'.repeat(100)}`.slice(0, 63)}…`);
 });
