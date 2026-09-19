@@ -638,14 +638,25 @@ export async function parseTranscript(transcriptPath: string): Promise<Transcrip
             latestUltracodeActive = false;
           }
         }
-        // Track the latest user-message timestamp regardless of content shape
-        // (string for slash commands, array for prompts/tool_results). The
-        // "current question" tier uses this as its boundary: a skill counts as
-        // recent only if it was triggered at or after the last user message.
+        // Track the latest *prompt* timestamp as the "current question" boundary.
+        // Tool results are also `type: 'user'` records but are NOT a new question:
+        // they carry the harness's tool output mid-turn. Updating pending on them
+        // would drop the just-triggered skill off the "本次" tier while the turn
+        // is still in flight. So only real prompts (string content or array with a
+        // text block, and not local-only client asides) advance pending — a skill
+        // stays "本次" through the rest of its turn and only clears when the user
+        // sends the next actual question.
         if (entry.type === 'user' && entry.timestamp) {
-          const userAt = new Date(entry.timestamp);
-          if (!Number.isNaN(userAt.getTime())) {
-            skillTurn.pending = userAt.getTime();
+          const content = entry.message?.content;
+          const isToolResult =
+            Array.isArray(content) && content.some((b) => b?.type === 'tool_result');
+          const isLocalOnly =
+            typeof content === 'string' ? isLocalOnlyUserText(content) : false;
+          if (!isToolResult && !isLocalOnly) {
+            const userAt = new Date(entry.timestamp);
+            if (!Number.isNaN(userAt.getTime())) {
+              skillTurn.pending = userAt.getTime();
+            }
           }
         }
         // The `/effort` command-output signal. Anchored at the start of a *user*

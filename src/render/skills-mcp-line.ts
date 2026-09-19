@@ -29,7 +29,7 @@ export function renderSkillsLine(ctx: RenderContext): string | null {
   // Session tier uses a dim label; recent tier uses a bold+yellow label so the
   // "current question" skills stand out from the session-total line.
   const parts = [`${dim('会话')} ${sessionPart}`];
-  const recentPart = renderSkillNames(recentEntries, ctx.config?.colors);
+  const recentPart = renderSkillNames(recentEntries, ctx.config?.colors, { hideCount: true });
   if (recentPart) {
     parts.push(`${bold(yellow('本次'))} ${recentPart}`);
   }
@@ -37,7 +37,12 @@ export function renderSkillsLine(ctx: RenderContext): string | null {
 }
 
 /** Render skills as `✓ Skills (N): name1 ×2, name2, +X more`. */
-function renderSkillNames(entries: SkillEntry[], colors?: Partial<HudColorOverrides>): string | null {
+function renderSkillNames(
+  entries: SkillEntry[],
+  colors?: Partial<HudColorOverrides>,
+  options?: { hideCount?: boolean },
+): string | null {
+  const hideCount = options?.hideCount ?? false;
   const safe = entries
     .map((e) => ({ name: safeActivityName(e.name), count: e.count }))
     .filter((e): e is { name: string; count: number } => Boolean(e.name));
@@ -47,7 +52,7 @@ function renderSkillNames(entries: SkillEntry[], colors?: Partial<HudColorOverri
 
   const visible = safe.slice(0, MAX_ITEMS_SHOWN).map((e) => {
     const name = cyan(e.name);
-    return e.count > 1 ? `${name} ${label(`×${e.count}`, colors)}` : name;
+    return !hideCount && e.count > 1 ? `${name} ${label(`×${e.count}`, colors)}` : name;
   });
   const hiddenCount = safe.length - visible.length;
   if (hiddenCount > 0) {
