@@ -3,6 +3,7 @@ import type { HudColorName, HudColorValue, HudColorOverrides } from '../config.j
 export const RESET = '\x1b[0m';
 
 const DIM = '\x1b[2m';
+const BOLD = '\x1b[1m';
 const RED = '\x1b[31m';
 const GREEN = '\x1b[32m';
 const YELLOW = '\x1b[33m';
@@ -78,6 +79,10 @@ export function magenta(text: string): string {
 
 export function dim(text: string): string {
   return colorize(text, DIM);
+}
+
+export function bold(text: string): string {
+  return colorize(text, BOLD);
 }
 
 export function claudeOrange(text: string): string {

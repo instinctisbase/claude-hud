@@ -5,7 +5,7 @@ import * as readline from 'node:readline';
 import { createHash } from 'node:crypto';
 import { getHudPluginDir } from './claude-config-dir.js';
 import { createDebug } from './debug.js';
-import type { TranscriptData, ToolEntry, AgentEntry, TodoItem, SessionTokenUsage } from './types.js';
+import type { TranscriptData, ToolEntry, AgentEntry, TodoItem, SessionTokenUsage, SkillEntry } from './types.js';
 import { sanitizeDisplayText } from './utils/sanitize.js';
 import { sanitizeTranscriptModel } from './model-source.js';
 import {
@@ -104,7 +104,7 @@ interface SerializedAgentEntry extends Omit<AgentEntry, 'startTime' | 'endTime'>
 
 interface SerializedTranscriptData {
   tools: SerializedToolEntry[];
-  skills: string[];
+  skills: SkillEntry[];
   mcpServers: string[];
   mcpErrors: string[];
   agents: SerializedAgentEntry[];
@@ -130,13 +130,27 @@ interface TranscriptCacheFile {
   data: SerializedTranscriptData;
 }
 
-const TRANSCRIPT_CACHE_VERSION = 18;
+const TRANSCRIPT_CACHE_VERSION = 19;
 const MCP_TOOL_NAME_PATTERN = /^mcp__(.+?)__(.+)$/;
 const ACTIVITY_NAME_MAX_LEN = 64;
 const MESSAGE_ID_MAX_LEN = 128;
 const REQUEST_ID_MAX_LEN = 128;
 const MESSAGE_USAGE_MAX = 4096;
 const MCP_ERROR_SERVERS_MAX = 64;
+
+/**
+ * Client-only slash commands that are built-in CLI actions, not skills. When a
+ * `<command-name>/x</command-name>` record names one of these, it is not a
+ * Skill invocation and must not appear in the Skills statusline line. Names are
+ * stored without the leading slash, matching how the regex captures them.
+ */
+const SLASH_COMMAND_BUILTINS = new Set<string>([
+  'exit', 'clear', 'help', 'config', 'my-page', 'fast', 'tasks',
+  'workflows', 'agents', 'memory', 'design-login', 'design-sync',
+  'remember', 'plugin', 'model', 'cost', 'advisor', 'effort',
+  'compact', 'resume', 'init', 'review', 'code-review', 'security-review',
+  'loop', 'run', 'add-dir', 'hooks', 'mcp', 'permissions', 'status',
+]);
 
 // Hard cap on the advisor model ID captured from the transcript. Real Claude
 // model IDs (e.g. "claude-haiku-4-5-20251001") fit comfortably under this; the
@@ -305,6 +319,35 @@ function normalizeNameList(value: unknown): string[] {
   return names;
 }
 
+/**
+ * Deserialize cached skills into SkillEntry[] (with recent flag). Old caches
+ * (pre-version-19) stored `string[]`; normalizeActivityName tolerates both
+ * raw strings and {name, recent} objects by reading `.name` when present.
+ */
+function normalizeSkillList(value: unknown): SkillEntry[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  const seen = new Set<string>();
+  const entries: SkillEntry[] = [];
+  for (const item of value) {
+    const name = typeof item === 'string'
+      ? normalizeActivityName(item)
+      : normalizeActivityName((item as { name?: unknown })?.name);
+    if (!name || seen.has(name)) {
+      continue;
+    }
+    seen.add(name);
+    const recent = typeof item === 'object' && item !== null
+      ? Boolean((item as { recent?: unknown }).recent)
+      : false;
+    entries.push({ name, recent });
+  }
+
+  return entries;
+}
+
 function normalizeActivityName(value: unknown): string | undefined {
   if (typeof value !== 'string') {
     return undefined;
@@ -392,7 +435,7 @@ function deserializeTranscriptData(data: SerializedTranscriptData): TranscriptDa
       startTime: new Date(tool.startTime),
       endTime: tool.endTime ? new Date(tool.endTime) : undefined,
     })),
-    skills: normalizeNameList(data.skills),
+    skills: normalizeSkillList(data.skills),
     mcpServers: normalizeNameList(data.mcpServers),
     mcpErrors: normalizeNameList(data.mcpErrors).slice(0, MCP_ERROR_SERVERS_MAX),
     agents: data.agents.map((agent) => ({
@@ -506,7 +549,12 @@ export async function parseTranscript(transcriptPath: string): Promise<Transcrip
   }
 
   const toolMap = new Map<string, ToolEntry>();
-  const skillSet = new Set<string>();
+  /** skill name -> most recent trigger time (for recent-flag computation). */
+  const skillMap = new Map<string, Date>();
+  /** Mutable turn-tracking state shared with processEntry: `pending` is the
+   *  latest user-message timestamp; `last` is promoted from `pending` only
+   *  when a turn triggers a skill, so "current question" = last skill turn. */
+  const skillTurn = { pending: undefined as number | undefined, last: undefined as number | undefined };
   const mcpServerSet = new Set<string>();
   const mcpErrorSet = new Set<string>();
   const agentMap = new Map<string, AgentEntry>();
@@ -595,6 +643,30 @@ export async function parseTranscript(transcriptPath: string): Promise<Transcrip
           );
           if (effortCommandMatch) {
             latestUltracodeActive = effortCommandMatch[1].toLowerCase() === 'ultracode';
+          }
+          // Update pending user-message ts for "current question" tracking.
+          const slashEntryAt = entry.timestamp ? new Date(entry.timestamp) : null;
+          const slashHasTime = slashEntryAt !== null && !Number.isNaN(slashEntryAt.getTime());
+          if (slashHasTime && slashEntryAt) {
+            skillTurn.pending = slashEntryAt.getTime();
+          }
+          // Detect skills triggered by slash commands (e.g. /kscc-find-skills).
+          // These arrive as user-message string content with a <command-name>
+          // tag; processEntry skips string content, so they are parsed here.
+          const slashSkillMatch = entry.message.content.match(
+            /<command-name>\/([^<\s]+)<\/command-name>/,
+          );
+          if (slashSkillMatch) {
+            const rawName = slashSkillMatch[1];
+            const skillName = normalizeSkillName(rawName);
+            // Skip client-only builtins (not skills): exit, clear, model, etc.
+            if (skillName && !SLASH_COMMAND_BUILTINS.has(skillName)) {
+              if (slashHasTime && slashEntryAt) {
+                // This turn triggered a skill: promote pending -> last.
+                skillTurn.last = slashEntryAt.getTime();
+                skillMap.set(skillName, slashEntryAt);
+              }
+            }
           }
         }
         // Capture the actual model from the assistant message's `model` field.
@@ -724,7 +796,7 @@ export async function parseTranscript(transcriptPath: string): Promise<Transcrip
             prevMainChainAt = entryAt;
           }
         }
-        processEntry(entry, toolMap, skillSet, mcpServerSet, mcpErrorSet, agentMap, taskIdToIndex, latestTodos, result);
+        processEntry(entry, toolMap, skillMap, skillTurn, mcpServerSet, mcpErrorSet, agentMap, taskIdToIndex, latestTodos, result);
       } catch (err) {
         lastUsageKey = undefined;
         debug('Skipping malformed transcript line:', err instanceof Error ? err.message : err);
@@ -752,7 +824,12 @@ export async function parseTranscript(transcriptPath: string): Promise<Transcrip
     }
   }
   result.tools = Array.from(toolMap.values()).slice(-20);
-  result.skills = Array.from(skillSet.values());
+  result.skills = Array.from(skillMap.entries()).map(([name, triggeredAt]) => ({
+    name,
+    recent: skillTurn.last !== undefined
+      && !Number.isNaN(triggeredAt.getTime())
+      && triggeredAt.getTime() >= skillTurn.last,
+  }));
   result.mcpServers = Array.from(mcpServerSet.values());
   result.mcpErrors = Array.from(mcpErrorSet.values());
   result.agents = Array.from(agentMap.values()).slice(-10);
@@ -791,7 +868,8 @@ export function _setCreateReadStreamForTests(impl: typeof fs.createReadStream | 
 function processEntry(
   entry: TranscriptLine,
   toolMap: Map<string, ToolEntry>,
-  skillSet: Set<string>,
+  skillMap: Map<string, Date>,
+  skillTurn: { pending: number | undefined; last: number | undefined },
   mcpServerSet: Set<string>,
   mcpErrorSet: Set<string>,
   agentMap: Map<string, AgentEntry>,
@@ -819,7 +897,12 @@ function processEntry(
         ? normalizeSkillName(block.input?.skill)
         : undefined;
       if (skillName) {
-        skillSet.add(skillName);
+        // Model-invoked Skill tool: this turn triggered a skill, so promote
+        // the pending user-message ts to lastSkillUserTs (current question).
+        if (skillTurn.pending !== undefined) {
+          skillTurn.last = skillTurn.pending;
+        }
+        skillMap.set(skillName, timestamp);
       }
 
       const mcpServerName = extractMcpServerName(block.name);

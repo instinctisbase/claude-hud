@@ -149,9 +149,15 @@ export interface SessionTokenUsage {
   cacheReadTokens: number;
 }
 
+export interface SkillEntry {
+  name: string;
+  /** True if this skill was triggered in the last turn that invoked any skill. */
+  recent: boolean;
+}
+
 export interface TranscriptData {
   tools: ToolEntry[];
-  skills: string[];
+  skills: SkillEntry[];
   mcpServers: string[];
   /**
    * MCP servers whose latest observed tool result is an error, derived

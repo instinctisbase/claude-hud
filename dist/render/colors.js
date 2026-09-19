@@ -1,5 +1,6 @@
 export const RESET = '\x1b[0m';
 const DIM = '\x1b[2m';
+const BOLD = '\x1b[1m';
 const RED = '\x1b[31m';
 const GREEN = '\x1b[32m';
 const YELLOW = '\x1b[33m';
@@ -64,6 +65,9 @@ export function magenta(text) {
 }
 export function dim(text) {
     return colorize(text, DIM);
+}
+export function bold(text) {
+    return colorize(text, BOLD);
 }
 export function claudeOrange(text) {
     return colorize(text, CLAUDE_ORANGE);
