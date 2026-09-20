@@ -3,7 +3,7 @@ import {
   getContextPercent,
   getBufferedPercent,
 } from "../../stdin.js";
-import { coloredBar, label, getContextColor, green, yellow, red, RESET } from "../colors.js";
+import { coloredBar, label, getContextColor, dim, green, yellow, red, RESET } from "../colors.js";
 import { getAdaptiveBarWidth } from "../../utils/terminal.js";
 import { t } from "../../i18n/index.js";
 import {
@@ -76,7 +76,7 @@ export function renderIdentityLine(
       const hitPercent = hitRatio * 100; // for threshold + display
       const hitColor =
         hitPercent >= 90 ? green : hitPercent >= 70 ? yellow : red;
-      line += ` ${hitColor(`Ch: ${hitPercent.toFixed(3)}%`)}`;
+      line += ` ${dim("Ch:")} ${hitColor(`${hitPercent.toFixed(3)}%`)}`;
     }
   }
 
