@@ -3,7 +3,7 @@ import {
   getContextPercent,
   getBufferedPercent,
 } from "../../stdin.js";
-import { coloredBar, label, getContextColor, RESET } from "../colors.js";
+import { coloredBar, label, getContextColor, green, yellow, red, RESET } from "../colors.js";
 import { getAdaptiveBarWidth } from "../../utils/terminal.js";
 import { t } from "../../i18n/index.js";
 import {
@@ -58,6 +58,25 @@ export function renderIdentityLine(
         ` (${t("format.in")}: ${input}, ${t("format.cache")}: ${cache})`,
         colors,
       );
+    }
+  }
+
+  // Append cache hit rate: cache_read / total input. Shown by default; set
+  // display.showCacheHit === false to hide. Only shown when there has been any
+  // cache activity (cache_read or cache_creation > 0) — a cold/no-cache turn
+  // would otherwise display a misleading "0%".
+  if (display?.showCacheHit !== false) {
+    const usage = ctx.stdin.context_window?.current_usage;
+    const input = usage?.input_tokens ?? 0;
+    const cacheCreation = usage?.cache_creation_input_tokens ?? 0;
+    const cacheRead = usage?.cache_read_input_tokens ?? 0;
+    const totalInput = input + cacheCreation + cacheRead;
+    if (totalInput > 0 && (cacheRead > 0 || cacheCreation > 0)) {
+      const hitRatio = cacheRead / totalInput; // 0..1
+      const hitPercent = hitRatio * 100; // for threshold + display
+      const hitColor =
+        hitPercent >= 90 ? green : hitPercent >= 70 ? yellow : red;
+      line += ` ${hitColor(`Ch: ${hitPercent.toFixed(3)}%`)}`;
     }
   }
 

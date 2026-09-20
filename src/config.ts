@@ -216,6 +216,7 @@ export interface HudConfig {
     showModelScopedUsage: boolean;
     showTools: boolean;
     showSkills: boolean;
+    showCacheHit: boolean;
     showMcp: boolean;
     toolNameMaxLength: number;
     toolsMaxVisible: number;
@@ -339,6 +340,7 @@ export const DEFAULT_CONFIG: HudConfig = {
     showModelScopedUsage: true,
     showTools: false,
     showSkills: false,
+    showCacheHit: true,
     showMcp: false,
     toolNameMaxLength: 0,
     toolsMaxVisible: 4,
@@ -843,6 +845,9 @@ export function mergeConfig(userConfig: Partial<HudConfig>): HudConfig {
     showSkills: typeof migrated.display?.showSkills === 'boolean'
       ? migrated.display.showSkills
       : DEFAULT_CONFIG.display.showSkills,
+    showCacheHit: typeof migrated.display?.showCacheHit === 'boolean'
+      ? migrated.display.showCacheHit
+      : DEFAULT_CONFIG.display.showCacheHit,
     showMcp: typeof migrated.display?.showMcp === 'boolean'
       ? migrated.display.showMcp
       : DEFAULT_CONFIG.display.showMcp,
